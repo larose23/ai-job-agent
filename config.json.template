@@ -1,0 +1,215 @@
+{
+  "_comment": "AI Job Agent Configuration - Maximize Sources",
+  "_instructions": "All sensitive credentials should be in .env only. Do not commit real secrets to version control.",
+
+  "openai_api_key": "${OPENAI_API_KEY}",
+  "google_credentials_json_path": "${GOOGLE_CREDENTIALS_JSON_PATH}",
+  "gmail_sender_email": "${GMAIL_SENDER_EMAIL}",
+  "gmail_app_password": "${GMAIL_APP_PASSWORD}",
+  "linkedin_email": "${LINKEDIN_EMAIL}",
+  "linkedin_password": "${LINKEDIN_PASSWORD}",
+
+  "spreadsheet_id": "1QQcUhzskvNoHZgEmiW84vngWFccSYnkNPKSDmto6yv8",
+  "sheet_name": "Jobs",
+  "metrics_sheet_name": "Metrics",
+  "job_alert_label": "Job Alerts",
+
+  "job_sources": [
+    "linkedin",
+    "indeed",
+    "bayt",
+    "naukri_gulf",
+    "monster_gulf",
+    "glassdoor",
+    "remoteok",
+    "weworkremotely",
+    "jobbank.gc.ca",
+    "workopolis",
+    "toptal",
+    "guru",
+    "peopleperhour",
+    "upwork",
+    "freelancer.com",
+    "angel.co",
+    "himalayas.app",
+    "flexjobs",
+    "jobleads",
+    "jooble.org",
+    "grabjobs.co",
+    "careerjet.ae",
+    "dubizzle.com/jobs",
+    "dribbble",
+    "remotive.io"
+  ],
+
+  "locations": {
+    "UAE": [
+      "Abu Dhabi",
+      "Dubai",
+      "Sharjah",
+      "Ajman",
+      "Umm Al Quwain",
+      "Ras Al Khaimah",
+      "Fujairah"
+    ],
+    "Canada": {
+      "remote_only": true,
+      "provinces": [
+        "Ontario",
+        "Quebec",
+        "British Columbia",
+        "Alberta",
+        "Manitoba",
+        "Nova Scotia"
+      ],
+      "_note": "Canadian roles must be 100% remote"
+    }
+  },
+
+  "role_categories": {
+    "tech_roles": [
+      "Software Developer",
+      "DevOps Engineer",
+      "AI Engineer",
+      "Machine Learning Engineer",
+      "Data Scientist",
+      "AI Prompt Engineer",
+      "No-Code Developer",
+      "Low-Code Developer",
+      "Web Designer",
+      "Frontend Developer",
+      "Full Stack Developer",
+      "Cloud Support Associate"
+    ],
+    "digital_marketing_roles": [
+      "Digital Marketer",
+      "Digital Marketing Manager",
+      "Social Media Strategist",
+      "Content Creator",
+      "Copywriter",
+      "Direct Response Writer"
+    ],
+    "sales_roles": [
+      "Sales Manager",
+      "Sales Executive",
+      "Sales Development Representative",
+      "Account Executive",
+      "Account Manager",
+      "Inside Sales Representative",
+      "Outside Sales Representative",
+      "Business Development Representative",
+      "Enterprise Sales Manager",
+      "B2B Sales Executive",
+      "B2C Sales Representative",
+      "Real Estate Sales Agent",
+      "Tech Sales",
+      "SaaS Sales Executive",
+      "Software Sales Representative",
+      "Retail Sales Consultant",
+      "High-Ticket Closer",
+      "Inbound Sales Representative",
+      "Outbound Sales Specialist",
+      "TeleSales Executive",
+      "Customer Success Manager",
+      "Client Relationship Manager"
+    ],
+    "support_roles": [
+      "Technical Support Engineer",
+      "Technical Support Specialist",
+      "Customer Support Specialist",
+      "Customer Service Manager",
+      "Help Desk Specialist",
+      "Remote Chat Support Agent",
+      "Customer Experience Specialist",
+      "Call Center Team Lead",
+      "CRM Manager",
+      "Remote Customer Support Representative",
+      "Client Relations Specialist",
+      "Customer Account Specialist",
+      "Service Delivery Coordinator",
+      "VIP Customer Support Agent",
+      "B2B Customer Support Executive",
+      "Live Chat Support Specialist",
+      "Customer Retention Specialist"
+    ],
+    "creative_roles": [
+      "YouTuber",
+      "Podcast Editor",
+      "Video Editor",
+      "Ecommerce Store Owner",
+      "Online Course Creator",
+      "Online Coach"
+    ],
+    "admin_roles": [
+      "Virtual Assistant",
+      "Data Entry Clerk",
+      "Administrative Assistant",
+      "Personal Assistant",
+      "Receptionist",
+      "Freelance Web Developer",
+      "Product Manager",
+      "AI Consultant"
+    ]
+  },
+
+  "keywords": [
+    "${role_categories.tech_roles}",
+    "${role_categories.digital_marketing_roles}",
+    "${role_categories.sales_roles}",
+    "${role_categories.support_roles}",
+    "${role_categories.creative_roles}",
+    "${role_categories.admin_roles}"
+  ],
+
+  "min_salary": {
+    "currency": "AED",
+    "amount": 10000,
+    "_note": "Salaries in USD/CAD are auto-converted using fixer.io"
+  },
+
+  "currency_conversion": {
+    "enabled": true,
+    "provider": "fixer_io",
+    "api_key": "${FIXER_IO_API_KEY}",
+    "pairs": {
+      "USD": "AED",
+      "CAD": "AED"
+    }
+  },
+
+  "max_results_per_source": 20,
+
+  "schedule": {
+    "poll_interval_minutes": 60,
+    "time_zone": "Asia/Dubai",
+    "_note": "Agent runs every hour. Adjust interval if needed."
+  },
+
+  "notification_preferences": {
+    "email": {
+      "enabled": true,
+      "recipient_list": ["zakariya957@gmail.com"]
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "${SLACK_WEBHOOK_URL}"
+    }
+  },
+
+  "proxy_settings": {
+    "enabled": false,
+    "http_proxy": "${HTTP_PROXY}",
+    "https_proxy": "${HTTPS_PROXY}"
+  },
+
+  "user_profile": {
+    "full_name": "Zakariya Mahadalle",
+    "email": "zakariya957@gmail.com",
+    "phone": "+971502715768",
+    "resume_file_path": "C:/Users/USER/Desktop/Zak's Resume DXB.docx.pdf",
+    "linkedin_profile_url": "https://www.linkedin.com/in/zakariya957/"
+  },
+
+  "_version": "1.2.0",
+  "_revision_date": "2025-06-01"
+}
