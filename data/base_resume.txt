@@ -1,0 +1,31 @@
+Zakariya Mahadalle
+Email: zakariya957@gmail.com
+Phone: +971-50-271-5768
+LinkedIn: www.linkedin.com/in/z-m-bb2a8528a
+Location: Dubai, UAE
+
+---
+
+SKILLS
+- Python, JavaScript, SQL
+- Machine Learning, Data Science
+- Web Scraping, Automation
+- Cloud: AWS, GCP
+- Git, Docker, Linux
+- Communication, Teamwork
+
+---
+
+EXPERIENCE
+
+Software Developer | Tech Solutions LLC | Dubai, UAE | 2021 - Present
+- Developed and maintained web applications using Python and JavaScript
+- Automated data collection and processing pipelines
+- Collaborated with cross-functional teams to deliver client projects
+
+Data Analyst | Data Insights Inc. | Remote | 2019 - 2021
+- Analyzed large datasets to extract actionable insights
+- Built dashboards and reports for business stakeholders
+- Implemented machine learning models for predictive analytics
+
+---

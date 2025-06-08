@@ -1,0 +1,14 @@
+Dear {{HiringManagerName}},
+
+I’m writing to express my interest in the {{JobTitle}} role at {{CompanyName}}. With a background in {{YourField}} and experience in {{RelevantExperience}}, I’m confident I can contribute meaningfully to your team.
+
+At my previous roles, I’ve {{Achievement1}} and {{Achievement2}}, which I believe align closely with the goals of this position.
+
+I’m excited by {{CompanyMissionOrProduct}} and would love the opportunity to bring my skills to support your continued growth.
+
+Thank you for your time and consideration. I look forward to hearing from you.
+
+Best regards,  
+Zakariya Mahadalle  
+{{YourPhoneNumber}} | {{YourEmail}}  
+{{LinkedInProfileURL}}
