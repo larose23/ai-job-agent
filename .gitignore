@@ -38,4 +38,6 @@ ENV/
 credentials.json
 token.json
 *.db
-.cursor/ 
+.cursor/
+config.json
+google_credentials.json 
