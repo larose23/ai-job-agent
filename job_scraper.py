@@ -9,6 +9,7 @@ import random
 import time
 import logging
 import sys
+import requests
 from typing import Dict, List, Optional, Any, Union
 from urllib.parse import quote_plus, urljoin
 from playwright.async_api import async_playwright, Browser, Page
@@ -17,7 +18,6 @@ from dotenv import load_dotenv
 
 from helpers import (
     load_config,
-    retry_on_failure,
     validate_email,
     sanitize_filename,
     create_directory_if_not_exists
@@ -55,18 +55,42 @@ class JobScraper:
             raise
             
     async def login_to_linkedin(self) -> None:
-        """Log in to LinkedIn using credentials from environment variables."""
-        try:
-            await self.page.goto('https://www.linkedin.com/login')
-            await self.page.fill('#username', os.getenv('LINKEDIN_EMAIL'))
-            await self.page.fill('#password', os.getenv('LINKEDIN_PASSWORD'))
-            await self.page.click('button[type="submit"]')
-            await self.page.wait_for_selector('.feed-identity-module')
-            logger.info("Successfully logged in to LinkedIn")
-        except Exception as e:
-            logger.error(f"LinkedIn login failed: {e}")
-            notify_slack(f"LinkedIn login failed: {e}")
-            raise
+        """Log in to LinkedIn using credentials from environment variables with robust selector and retry logic."""
+        selectors = [
+            '.global-nav__me-photo',  # Profile photo
+            '.global-nav__me-menu',   # Profile menu
+            '.feed-identity-module',  # Feed module
+            '.search-global-typeahead',  # Search bar
+            '.global-nav__primary-items'  # Main navigation
+        ]
+        max_retries = 3
+        base_timeout = 30000  # 30 seconds
+        for attempt in range(max_retries):
+            try:
+                await self.page.goto('https://www.linkedin.com/login')
+                await self.page.fill('#username', os.getenv('LINKEDIN_EMAIL'))
+                await self.page.fill('#password', os.getenv('LINKEDIN_PASSWORD'))
+                await self.page.click('button[type="submit"]')
+                for selector in selectors:
+                    try:
+                        await self.page.wait_for_selector(selector, timeout=base_timeout + attempt * 10000)
+                        logger.info(f"Login successful! Detected by selector: {selector}")
+                        return
+                    except Exception:
+                        continue
+                raise Exception("No login success selectors found.")
+            except Exception as e:
+                logger.error(f"LinkedIn login attempt {attempt+1} failed: {e}")
+                if attempt == max_retries - 1:
+                    # Log page content and screenshot for debugging
+                    try:
+                        content = await self.page.content()
+                        logger.error(f"LinkedIn login failed page content: {content[:1000]}")
+                        await self.page.screenshot(path=f'linkedin_login_failed_attempt_{attempt+1}.png')
+                    except Exception as ex:
+                        logger.error(f"Failed to capture LinkedIn login debug info: {ex}")
+                await asyncio.sleep(2 * (attempt + 1))
+        raise Exception("LinkedIn login failed after retries.")
     
     def deduplicate_jobs(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -80,20 +104,12 @@ class JobScraper:
         """
         unique_jobs = []
         seen_urls = set()
-        seen_hashes = set()
         
         for job in jobs:
             job_url = job.get('job_url', '')
-            job_hash = hash_job(
-                job.get('title', ''),
-                job.get('company', ''),
-                job.get('location', '')
-            )
-            
-            if job_url not in seen_urls and job_hash not in seen_hashes:
+            if job_url not in seen_urls:
                 unique_jobs.append(job)
                 seen_urls.add(job_url)
-                seen_hashes.add(job_hash)
                 
         self.logger.info(f"Deduplicated {len(jobs)} jobs to {len(unique_jobs)} unique jobs")
         return unique_jobs
@@ -132,8 +148,8 @@ class JobScraper:
         self, 
         keywords: List[str], 
         locations: List[str], 
-        min_salary_aed: int, 
-        max_results: int
+        min_salary_aed: int = 0, 
+        max_results: int = 50
     ) -> List[Dict[str, Any]]:
         """
         Scrape job postings from LinkedIn using Playwright.
@@ -167,7 +183,8 @@ class JobScraper:
         except Exception as e:
             self.logger.error(f"Error during LinkedIn scraping: {e}")
         finally:
-            await self.browser.close()
+            if self.browser:
+                await self.browser.close()
         
         # Filter and deduplicate
         filtered_jobs = self.filter_by_salary(all_jobs, min_salary_aed)
@@ -238,40 +255,33 @@ class JobScraper:
             Job data dictionary or None if extraction fails
         """
         try:
-            # Extract basic info
-            title_elem = await card.query_selector('.job-search-card__title a')
-            title = await title_elem.inner_text() if title_elem else ""
+            # Click on job card to load details
+            await card.click()
+            await asyncio.sleep(1)
             
-            company_elem = await card.query_selector('.job-search-card__subtitle a')
-            company = await company_elem.inner_text() if company_elem else ""
+            # Wait for job details to load
+            await page.wait_for_selector('.job-details-jobs-unified-top-card')
             
-            location_elem = await card.query_selector('.job-search-card__location')
-            location = await location_elem.inner_text() if location_elem else ""
+            # Extract job information
+            title = await page.query_selector('.job-details-jobs-unified-top-card__job-title')
+            company = await page.query_selector('.job-details-jobs-unified-top-card__company-name')
+            location = await page.query_selector('.job-details-jobs-unified-top-card__bullet')
+            description = await page.query_selector('.job-details-jobs-unified-top-card__job-description')
+            
+            title_text = await title.text_content() if title else "N/A"
+            company_text = await company.text_content() if company else "N/A"
+            location_text = await location.text_content() if location else "N/A"
+            description_text = await description.text_content() if description else ""
             
             # Get job URL
-            job_url = await title_elem.get_attribute('href') if title_elem else ""
-            if job_url and not job_url.startswith('http'):
-                job_url = urljoin('https://www.linkedin.com', job_url)
-            
-            # Click to get full description and salary info
-            await card.click()
-            await page.wait_for_load_state('networkidle')
-            
-            # Extract salary info
-            salary_elem = await page.query_selector('.job-details-jobs-unified-top-card__salary-info')
-            salary_text = await salary_elem.inner_text() if salary_elem else ""
-            
-            # Extract job description
-            desc_elem = await page.query_selector('.job-description')
-            description = await desc_elem.inner_text() if desc_elem else ""
+            job_url = await page.url()
             
             return {
-                'title': title,
-                'company': company,
-                'location': location,
+                'title': title_text.strip(),
+                'company': company_text.strip(),
+                'location': location_text.strip(),
                 'job_url': job_url,
-                'salary_text': salary_text,
-                'description': description,
+                'description': description_text.strip(),
                 'source': 'linkedin'
             }
             
@@ -279,86 +289,58 @@ class JobScraper:
             self.logger.warning(f"Error extracting job data: {e}")
             return None
     
-    @retry_on_failure(max_retries=3)
-    def scrape_indeed_jobs(self, keywords: str, location: str, max_pages: int = 3) -> List[Dict[str, Any]]:
+    def scrape_indeed_jobs(
+        self, 
+        keywords: str, 
+        location: str, 
+        max_pages: int = 3
+    ) -> List[Dict[str, Any]]:
         """
-        Scrape job postings from Indeed.
-        
-        Args:
-            keywords: Job keywords to search
-            location: Job location
-            max_pages: Maximum number of pages to scrape
-            
-        Returns:
-            List of job dictionaries
+        Scrape job postings from Indeed with user-agent rotation and random delays.
         """
         self.logger.info(f"Starting Indeed job scraping for '{keywords}' in '{location}'")
         all_jobs = []
-        
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        ]
         try:
             for page in range(max_pages):
-                jobs = self._search_indeed_jobs(keywords, location, page)
-                all_jobs.extend(jobs)
-                
-                if len(jobs) < 10:  # Less than 10 jobs means we're on the last page
+                headers = {'User-Agent': random.choice(user_agents)}
+                # Construct search URL
+                search_url = f"https://www.indeed.com/jobs?q={quote_plus(keywords)}&l={quote_plus(location)}&start={page * 10}"
+                # Make request
+                response = requests.get(
+                    search_url,
+                    headers=headers
+                )
+                if response.status_code == 403:
+                    self.logger.warning(f"Indeed returned 403 Forbidden for page {page+1}. Trying next user-agent.")
+                    time.sleep(random.uniform(2, 5))
+                    continue
+                response.raise_for_status()
+                # Parse HTML
+                soup = BeautifulSoup(response.text, 'html.parser')
+                job_cards = soup.find_all('div', class_='job_seen_beacon')
+                for card in job_cards:
+                    try:
+                        job_data = self._extract_indeed_job_data(card)
+                        if job_data:
+                            all_jobs.append(job_data)
+                    except Exception as e:
+                        self.logger.warning(f"Error extracting job data: {e}")
+                        continue
+                if len(job_cards) < 10:
                     break
-                    
-                # Random delay between pages
                 time.sleep(random.uniform(2, 5))
-                
         except Exception as e:
             self.logger.error(f"Error during Indeed scraping: {e}")
-            
-        # Filter and deduplicate
-        filtered_jobs = self.filter_by_salary(all_jobs, self.config.get('min_salary_aed', 0))
-        unique_jobs = self.deduplicate_jobs(filtered_jobs)
-        
+        unique_jobs = self.deduplicate_jobs(all_jobs)
         self.logger.info(f"Indeed scraping completed: {len(unique_jobs)} jobs found")
         return unique_jobs
-    
-    def _search_indeed_jobs(self, keywords: str, location: str, page: int) -> List[Dict[str, Any]]:
-        """
-        Search for jobs on Indeed with specific keyword and location.
-        
-        Args:
-            keywords: Job keywords
-            location: Job location
-            page: Page number to scrape
-            
-        Returns:
-            List of job dictionaries
-        """
-        jobs = []
-        
-        try:
-            # Construct search URL
-            search_url = f"https://www.indeed.com/jobs?q={quote_plus(keywords)}&l={quote_plus(location)}&start={page * 10}"
-            
-            # Make request
-            response = requests.get(
-                search_url,
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            )
-            response.raise_for_status()
-            
-            # Parse HTML
-            soup = BeautifulSoup(response.text, 'html.parser')
-            job_cards = soup.find_all('div', class_='job_seen_beacon')
-            
-            for card in job_cards:
-                try:
-                    job_data = self._extract_indeed_job_data(card)
-                    if job_data:
-                        jobs.append(job_data)
-                        
-                except Exception as e:
-                    self.logger.warning(f"Error extracting job data: {e}")
-                    continue
-                    
-        except Exception as e:
-            self.logger.error(f"Error searching Indeed jobs: {e}")
-            
-        return jobs
     
     def _extract_indeed_job_data(self, card) -> Optional[Dict[str, Any]]:
         """
@@ -442,7 +424,7 @@ def scrape_all_jobs(config_path: str = "config.json") -> List[Dict[str, Any]]:
     if config.get('enable_indeed_scraping', True):
         try:
             indeed_jobs = scraper.scrape_indeed_jobs(
-                keywords=config.get('job_keywords', []),
+                keywords=config.get('job_keywords', [])[0] if config.get('job_keywords') else "",
                 location=config.get('job_locations', [])[0] if config.get('job_locations') else "",
                 max_pages=config.get('max_pages', 3)
             )
@@ -456,6 +438,55 @@ def scrape_all_jobs(config_path: str = "config.json") -> List[Dict[str, Any]]:
     
     return unique_jobs
 
+
+def scrape_linkedin_jobs(
+    keywords: List[str],
+    locations: List[str],
+    min_salary_aed: int = 0,
+    max_results: int = 50
+) -> List[Dict[str, Any]]:
+    """
+    Module-level function to scrape jobs from LinkedIn.
+    
+    Args:
+        keywords: List of job keywords to search
+        locations: List of locations to search
+        min_salary_aed: Minimum salary in AED
+        max_results: Maximum results per query
+        
+    Returns:
+        List of job dictionaries
+    """
+    scraper = JobScraper()
+    return asyncio.run(scraper.scrape_linkedin_jobs(
+        keywords=keywords,
+        locations=locations,
+        min_salary_aed=min_salary_aed,
+        max_results=max_results
+    ))
+
+def scrape_indeed_jobs(
+    keywords: str,
+    location: str,
+    max_pages: int = 3
+) -> List[Dict[str, Any]]:
+    """
+    Module-level function to scrape jobs from Indeed.
+    
+    Args:
+        keywords: Job keywords to search
+        location: Job location
+        max_pages: Maximum number of pages to scrape
+        
+    Returns:
+        List of job dictionaries
+    """
+    scraper = JobScraper()
+    return scraper.scrape_indeed_jobs(
+        keywords=keywords,
+        location=location,
+        max_pages=max_pages
+    )
 
 if __name__ == "__main__":
     # Configure logging

@@ -10,11 +10,10 @@ import re
 from datetime import datetime
 from typing import Dict, Optional, Any, List, Union
 
-import openai
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from helpers import load_config, sanitize_filename, create_directory_if_not_exists, retry_on_failure
+from helpers import load_config, sanitize_filename, create_directory_if_not_exists
 from logger import logger, notify_slack
 
 load_dotenv()
@@ -33,16 +32,16 @@ class ResumeTailor:
         self.logger = logger
         
         # Initialize OpenAI client
-        openai.api_key = os.getenv('OPENAI_API_KEY')
-        self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        
-        if not openai.api_key:
+        api_key = os.getenv('OPENAI_API_KEY')
+        base_url = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+        if not api_key:
             error_msg = "OpenAI API key not found in environment variables"
             logger.error(error_msg)
             notify_slack(error_msg)
             raise ValueError(error_msg)
             
-        logger.info("Resume tailor initialized with OpenAI API")
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        logger.info(f"Resume tailor initialized with OpenAI API at {base_url}")
         
         # Load base resume
         self.base_resume = self._load_base_resume()
@@ -81,7 +80,6 @@ class ResumeTailor:
             self.logger.error(f"Error loading base resume: {e}")
             raise
     
-    @retry_on_failure(max_retries=3)
     def tailor_resume_and_cover(self, job: Dict[str, Any]) -> Dict[str, Any]:
         """
         Tailor resume and generate cover letter for a specific job.

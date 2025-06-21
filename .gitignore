@@ -1,7 +1,57 @@
-# Python
+# Environment variables
+.env
+.env.*
+
+# Credentials and secrets
+google_credentials.json
+*credentials*.json
+*_credentials*.json
+*credential*.json
+*credential*.pem
+*key*.json
+*key*.pem
+
+# Logs
+*.log
+logs/
+ai_job_agent.log
+job_agent.log
+
+# Screenshots and debug images
+*.png
+*.jpg
+*.jpeg
+
+# Cache and temporary files
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project specific
+test_output/
+output.txt
+jobs.csv
+jobs_*.json
+
+# Python
 *.so
 .Python
 build/
@@ -20,24 +70,10 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-env/
-ENV/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
-
 # Project specific
-.env
 *.log
 credentials.json
 token.json
 *.db
 .cursor/
-config.json
-google_credentials.json 
+config.json 

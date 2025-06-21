@@ -208,6 +208,44 @@ def check_config(
         typer.echo(f"Error: {error_msg}")
         raise typer.Exit(1)
 
+@app.command()
+@safe_operation
+def run(
+    config_path: str = typer.Option("config.json", help="Path to config file"),
+    auto_apply: bool = typer.Option(None, help="Enable auto-apply (overrides config)"),
+    review_before_apply: bool = typer.Option(None, help="Enable review before apply (overrides config)")
+):
+    """
+    Run the job agent with specified config and feature flags.
+    """
+    config = load_config(config_path)
+    if auto_apply is not None:
+        config['auto_apply_enabled'] = auto_apply
+    if review_before_apply is not None:
+        config['review_before_apply'] = review_before_apply
+    # ... rest of the run logic, passing config to dispatcher ...
+
+@app.command()
+@safe_operation
+def process_review_queue(
+    config_path: str = typer.Option("config.json", help="Path to config file")
+):
+    """
+    Process jobs marked as Approved in the Review sheet and trigger applications.
+    """
+    import asyncio
+    from application_dispatcher import ApplicationDispatcher
+    from sheets_logger import SheetsLogger
+    config = load_config(config_path)
+    user_profile = config.get('user_profile', {})
+    sheets_logger = SheetsLogger(config_path)
+    approved_jobs = sheets_logger.get_approved_review_jobs()
+    dispatcher = ApplicationDispatcher(config, user_profile)
+    async def process_jobs():
+        for job in approved_jobs:
+            await dispatcher.dispatch(job)
+    asyncio.run(process_jobs())
+
 def main() -> None:
     """
     Entry point for the CLI.

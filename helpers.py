@@ -143,28 +143,29 @@ def safe_operation(func: Callable[..., T]) -> Callable[..., T]:
             raise
     return cast(Callable[..., T], wrapper)
 
+def _substitute_env_vars(obj):
+    if isinstance(obj, dict):
+        return {k: _substitute_env_vars(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_substitute_env_vars(i) for i in obj]
+    elif isinstance(obj, str) and obj.startswith("${") and obj.endswith("}"):
+        env_var = obj[2:-1]
+        return os.getenv(env_var, obj)
+    else:
+        return obj
+
 @safe_operation
-def load_config(config_path: str = "config.json") -> Dict[str, Any]:
+def load_config(config_path: str) -> dict:
     """
-    Load configuration from JSON file and replace environment variables.
-    
-    Args:
-        config_path: Path to configuration file
-        
-    Returns:
-        Dict[str, Any]: Configuration dictionary with environment variables replaced
-        
-    Raises:
-        FileNotFoundError: If config file is missing
-        ValueError: If required environment variables are missing or config is invalid
-        
-    Example:
-        config = load_config("my_config.json")
+    Load configuration from JSON file and replace environment variables recursively.
     """
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
-            
+
+        # Recursively substitute env vars
+        config = _substitute_env_vars(config)
+
         # Required environment variables
         required_vars = [
             "OPENAI_API_KEY",
@@ -174,23 +175,32 @@ def load_config(config_path: str = "config.json") -> Dict[str, Any]:
             "LINKEDIN_PASSWORD",
             "SPREADSHEET_ID"
         ]
-        
-        # Check for missing environment variables
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         if missing_vars:
             error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
             logger.error(error_msg)
             notify_slack(error_msg)
             raise ValueError(error_msg)
-            
-        # Replace environment variables in config
-        for key, value in config.items():
-            if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
-                env_var = value[2:-1]
-                config[key] = os.getenv(env_var)
-                
+
+        print("[DEBUG] Loaded keywords from config:", config.get("keywords"))
+
+        # Ensure credentials section exists
+        if 'credentials' not in config:
+            config['credentials'] = {}
+        if 'linkedin' not in config['credentials']:
+            # Fallback to flat keys
+            email = config.get('linkedin_email')
+            password = config.get('linkedin_password')
+            if email and password:
+                config['credentials']['linkedin'] = {'email': email, 'password': password}
+
+        # Debug output
+        linkedin_creds = config['credentials'].get('linkedin', {})
+        print(f"[DEBUG] LinkedIn email loaded: {linkedin_creds.get('email')}")
+        print(f"[DEBUG] LinkedIn password present: {bool(linkedin_creds.get('password'))}")
+
         return config
-        
+
     except FileNotFoundError:
         error_msg = f"Configuration file not found: {config_path}"
         logger.error(error_msg)
@@ -360,6 +370,21 @@ def test_indeed_scraping(self):
     except Exception as e:
         self.logger.error(f"Scraper test failed: {str(e)}")
         return False
+
+def retry_on_failure(max_retries=3, delay=2):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for i in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if i < max_retries - 1:
+                        time.sleep(delay)
+                    else:
+                        raise e
+        return wrapper
+    return decorator
 
 if __name__ == "__main__":
     # Configure logging

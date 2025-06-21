@@ -30,19 +30,21 @@ def generate_config():
     env_vars = dict(os.environ)
     resolved = resolve_placeholders(template, env_vars)
 
-    # Also flatten role_categories into keywords list if needed
+    # Handle keywords - only expand role categories when explicitly referenced
     if "keywords" in resolved:
         flattened_keywords = []
-        for group in resolved["keywords"]:
-            if isinstance(group, list):
-                flattened_keywords.extend(group)
-            elif isinstance(group, str) and group.startswith("${") and group.endswith("}"):
-                key_path = group[2:-1].split(".")
+        for keyword in resolved["keywords"]:
+            if isinstance(keyword, str) and keyword.startswith("${role_categories.") and keyword.endswith("}"):
+                # This is an explicit reference to a role category
+                key_path = keyword[2:-1].split(".")
                 ref = resolved
                 for k in key_path:
                     ref = ref.get(k, {})
                 if isinstance(ref, list):
                     flattened_keywords.extend(ref)
+            else:
+                # This is an explicit keyword, keep it as is
+                flattened_keywords.append(keyword)
         resolved["keywords"] = flattened_keywords
 
     with open(OUTPUT_FILE, "w") as f:

@@ -303,6 +303,7 @@ def create_gmail_sender() -> GmailSender:
     """
     email = os.getenv('GMAIL_ADDRESS')
     app_password = os.getenv('GMAIL_APP_PASSWORD')
+    print(f"[DEBUG] GmailSender using Gmail app password: {app_password}")
     
     if not email or not app_password:
         error_msg = "Gmail credentials not found in environment variables"

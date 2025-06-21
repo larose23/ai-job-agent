@@ -4,6 +4,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 from datetime import datetime
 from typing import Optional
+import sys
 
 # Create logs directory if it doesn't exist
 os.makedirs('logs', exist_ok=True)
@@ -33,13 +34,14 @@ def setup_logger(name: str = 'job_agent') -> logging.Logger:
     file_handler = RotatingFileHandler(
         'logs/app.log',
         maxBytes=5*1024*1024,  # 5MB
-        backupCount=5
+        backupCount=5,
+        encoding='utf-8'
     )
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(file_formatter)
     
-    # Console handler
-    console_handler = logging.StreamHandler()
+    # Console handler with UTF-8 encoding
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
     
