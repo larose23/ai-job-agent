@@ -8,17 +8,28 @@ import email
 import logging
 import os
 import re
+import traceback
 from typing import List, Dict, Optional
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from pathlib import Path
 
-from google.oauth2 import service_account
+from dotenv import load_dotenv
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from bs4 import BeautifulSoup
 
-from helpers import load_config, retry_on_failure, hash_job
+from helpers import load_config, hash_job
 
+# If modifying these scopes, delete the file token.json.
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 class EmailScanner:
     """Gmail email scanner for job alerts."""
@@ -33,32 +44,101 @@ class EmailScanner:
         self.config = load_config(config_path)
         self.logger = logging.getLogger(__name__)
         self.service = None
+        self.credentials_path = self._get_credentials_path()
         self._authenticate()
     
+    def _get_credentials_path(self) -> str:
+        """
+        Get the path to Google credentials file for Gmail OAuth.
+        """
+        creds_path = self.config.get('credentials', {}).get('google', {}).get('gmail_credentials_json_path')
+        if not creds_path:
+            raise ValueError("Google Gmail credentials path not found in config")
+        # Handle environment variable
+        if creds_path.startswith('${') and creds_path.endswith('}'):
+            env_var = creds_path[2:-1]
+            creds_path = os.getenv(env_var)
+            if not creds_path:
+                raise ValueError(f"Environment variable {env_var} not set")
+        if not os.path.isabs(creds_path):
+            creds_path = os.path.abspath(creds_path)
+        if not os.path.exists(creds_path):
+            raise FileNotFoundError(f"Google Gmail credentials file not found at: {creds_path}")
+        return creds_path
+    
     def _authenticate(self) -> None:
-        """Authenticate with Gmail API using service account."""
+        """
+        Authenticate with Gmail API using OAuth2.
+        
+        This method:
+        1. Checks for existing token
+        2. Refreshes token if expired
+        3. Creates new token if needed
+        4. Builds Gmail service
+        
+        Raises:
+            Exception: If authentication fails
+        """
         try:
-            credentials_path = self.config.get('google_credentials_json_path', './google_credentials.json')
-            if not os.path.exists(credentials_path):
-                raise FileNotFoundError(
-                    f"Google credentials file not found at {credentials_path}. "
-                    "Please download it from Google Cloud Console."
-                )
+            creds = None
+            token_path = 'token.json'
             
-            credentials = service_account.Credentials.from_service_account_file(
-                credentials_path,
-                scopes=['https://www.googleapis.com/auth/gmail.readonly',
-                       'https://www.googleapis.com/auth/gmail.modify']
-            )
+            # Check for existing token
+            if os.path.exists(token_path):
+                try:
+                    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+                    self.logger.debug("Loaded existing token")
+                except Exception as e:
+                    self.logger.warning(f"Failed to load token.json: {e}")
+                    # If token is invalid, remove it
+                    os.remove(token_path)
             
-            self.service = build('gmail', 'v1', credentials=credentials)
-            self.logger.info("Successfully authenticated with Gmail API")
+            # Handle token refresh or creation
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        creds.refresh(Request())
+                        self.logger.debug("Refreshed expired token")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to refresh token: {e}")
+                        creds = None
+                
+                if not creds:
+                    try:
+                        flow = InstalledAppFlow.from_client_secrets_file(
+                            self.credentials_path, SCOPES)
+                        creds = flow.run_local_server(port=0)
+                        self.logger.debug("Created new token")
+                    except Exception as e:
+                        error_msg = f"Failed to create OAuth flow: {e}"
+                        self.logger.error(error_msg)
+                        self.logger.error("Make sure google_credentials.json is for an installed app")
+                        raise Exception(error_msg)
+                
+                # Save the credentials for the next run
+                try:
+                    with open(token_path, 'w') as token:
+                        token.write(creds.to_json())
+                    self.logger.debug("Saved new token")
+                except Exception as e:
+                    self.logger.error(f"Failed to save token: {e}")
+                    # Continue even if token save fails
+            
+            # Build Gmail service
+            try:
+                self.service = build('gmail', 'v1', credentials=creds)
+                self.logger.info("Successfully authenticated with Gmail API")
+            except Exception as e:
+                error_msg = f"Failed to build Gmail service: {e}"
+                self.logger.error(error_msg)
+                raise Exception(error_msg)
             
         except Exception as e:
-            self.logger.error(f"Failed to authenticate with Gmail API: {e}")
-            raise
+            error_msg = f"Failed to authenticate with Gmail API: {e}"
+            self.logger.error(error_msg)
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            raise Exception(error_msg)
     
-    @retry_on_failure(max_retries=3)
     def fetch_labeled_emails(self, label: str, max_emails: int = 50) -> List[Dict]:
         """
         Fetch unread emails with a specific label from Gmail.
@@ -69,12 +149,18 @@ class EmailScanner:
             
         Returns:
             List of email dictionaries with metadata and body
+            
+        Raises:
+            Exception: If email fetching fails
         """
         self.logger.info(f"Fetching emails with label '{label}'")
         
         try:
-            # Get label ID
-            labels_result = self.service.users().labels().list(userId='me').execute()
+            # Get label ID with retry logic
+            labels_result = self._retry_api_call(
+                lambda: self.service.users().labels().list(userId='me').execute(),
+                "fetching labels"
+            )
             labels = labels_result.get('labels', [])
             
             label_id = None
@@ -84,16 +170,20 @@ class EmailScanner:
                     break
             
             if not label_id:
-                self.logger.warning(f"Label '{label}' not found. Available labels: {[l['name'] for l in labels]}")
+                error_msg = f"Label '{label}' not found. Available labels: {[l['name'] for l in labels]}"
+                self.logger.warning(error_msg)
                 return []
             
             # Search for unread emails with the label
             query = f'label:{label} is:unread'
-            results = self.service.users().messages().list(
-                userId='me', 
-                q=query, 
-                maxResults=max_emails
-            ).execute()
+            results = self._retry_api_call(
+                lambda: self.service.users().messages().list(
+                    userId='me', 
+                    q=query, 
+                    maxResults=max_emails
+                ).execute(),
+                "searching messages"
+            )
             
             messages = results.get('messages', [])
             self.logger.info(f"Found {len(messages)} unread emails with label '{label}'")
@@ -114,11 +204,43 @@ class EmailScanner:
             return emails
             
         except HttpError as e:
-            self.logger.error(f"Gmail API error: {e}")
-            raise
+            error_msg = f"Gmail API error: {e}"
+            self.logger.error(error_msg)
+            raise Exception(error_msg)
         except Exception as e:
-            self.logger.error(f"Error fetching emails: {e}")
-            raise
+            error_msg = f"Error fetching emails: {e}"
+            self.logger.error(error_msg)
+            raise Exception(error_msg)
+    
+    def _retry_api_call(self, api_call, operation_name, max_retries=3, base_delay=2):
+        """
+        Retry an API call with exponential backoff.
+        
+        Args:
+            api_call: Lambda function containing the API call
+            operation_name: Name of the operation for logging
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds
+            
+        Returns:
+            API call result
+            
+        Raises:
+            Exception: If all retries fail
+        """
+        import time
+        
+        for attempt in range(max_retries + 1):
+            try:
+                return api_call()
+            except Exception as e:
+                if attempt == max_retries:
+                    raise e
+                
+                delay = base_delay * (2 ** attempt)
+                self.logger.warning(f"API call failed for {operation_name} (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                self.logger.info(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
     
     def _get_email_content(self, message_id: str) -> Optional[Dict]:
         """
@@ -131,11 +253,14 @@ class EmailScanner:
             Email data dictionary or None if error
         """
         try:
-            message = self.service.users().messages().get(
-                userId='me', 
-                id=message_id, 
-                format='full'
-            ).execute()
+            message = self._retry_api_call(
+                lambda: self.service.users().messages().get(
+                    userId='me', 
+                    id=message_id, 
+                    format='full'
+                ).execute(),
+                f"fetching email {message_id}"
+            )
             
             headers = message['payload'].get('headers', [])
             
@@ -274,25 +399,25 @@ class EmailScanner:
     def _parse_linkedin_job_alert(self, email_body: str) -> List[Dict]:
         """Parse LinkedIn job alert emails."""
         jobs = []
-        
-        # LinkedIn job alert patterns
         job_pattern = re.compile(
             r'(?P<title>[^\n]+?)\s+at\s+(?P<company>[^\n]+?)\s*\n.*?'
             r'(?P<location>[^\n]+?)\s*\n.*?'
-            r'(?:https://www\.linkedin\.com/jobs/view/(?P<job_id>\d+))',
+            r'(https://www\.linkedin\.com/jobs/view/(?P<job_id>\d+))',
             re.DOTALL | re.IGNORECASE
         )
-        
         matches = job_pattern.finditer(email_body)
-        
         for match in matches:
             title = match.group('title').strip()
             company = match.group('company').strip()
             location = match.group('location').strip()
-            job_id = match.group('job_id')
-            job_url = f"https://www.linkedin.com/jobs/view/{job_id}" if job_id else ""
-            
-            # Extract salary if present
+            job_url = match.group(4).strip()
+            apply_url = ''
+            # Look for a direct apply link (if present and different)
+            apply_link_match = re.search(r'(https://www\.linkedin\.com/jobs/apply/[^\s]+)', email_body)
+            if apply_link_match:
+                apply_url = apply_link_match.group(1).strip()
+                if apply_url == job_url:
+                    apply_url = ''
             salary_text = ""
             salary_match = re.search(
                 r'(?:salary|pay|compensation)[:\s]*([^\n]+)',
@@ -301,8 +426,7 @@ class EmailScanner:
             )
             if salary_match:
                 salary_text = salary_match.group(1).strip()
-            
-            jobs.append({
+            job = {
                 'title': title,
                 'company': company,
                 'location': location,
@@ -310,31 +434,32 @@ class EmailScanner:
                 'job_url': job_url,
                 'full_description': "",
                 'source': 'LinkedIn Email'
-            })
-        
+            }
+            job['apply_url'] = apply_url or job_url
+            jobs.append(job)
         return jobs
     
     def _parse_indeed_job_alert(self, email_body: str) -> List[Dict]:
         """Parse Indeed job alert emails."""
         jobs = []
-        
-        # Indeed job alert patterns
         job_pattern = re.compile(
             r'(?P<title>[^\n]+?)\s*\n\s*(?P<company>[^\n]+?)\s*\n\s*(?P<location>[^\n]+?)\s*\n.*?'
-            r'(?:https://[a-z]{2}\.indeed\.com/viewjob\?jk=(?P<job_id>[a-zA-Z0-9]+))',
+            r'(https://[a-z]{2}\.indeed\.com/viewjob\?jk=(?P<job_id>[a-zA-Z0-9]+))',
             re.DOTALL | re.IGNORECASE
         )
-        
         matches = job_pattern.finditer(email_body)
-        
         for match in matches:
             title = match.group('title').strip()
             company = match.group('company').strip()
             location = match.group('location').strip()
-            job_id = match.group('job_id')
-            job_url = f"https://ae.indeed.com/viewjob?jk={job_id}" if job_id else ""
-            
-            # Extract salary if present
+            job_url = match.group(4).strip()
+            apply_url = ''
+            # Look for a direct apply link (if present and different)
+            apply_link_match = re.search(r'(https://[a-z]{2}\.indeed\.com/applystart/[^\s]+)', email_body)
+            if apply_link_match:
+                apply_url = apply_link_match.group(1).strip()
+                if apply_url == job_url:
+                    apply_url = ''
             salary_text = ""
             salary_match = re.search(
                 r'(?:AED|CAD|USD)\s*[\d,]+(?:\s*-\s*(?:AED|CAD|USD)\s*[\d,]+)?',
@@ -343,8 +468,7 @@ class EmailScanner:
             )
             if salary_match:
                 salary_text = salary_match.group(0).strip()
-            
-            jobs.append({
+            job = {
                 'title': title,
                 'company': company,
                 'location': location,
@@ -352,34 +476,33 @@ class EmailScanner:
                 'job_url': job_url,
                 'full_description': "",
                 'source': 'Indeed Email'
-            })
-        
+            }
+            job['apply_url'] = apply_url or job_url
+            jobs.append(job)
         return jobs
     
     def _parse_glassdoor_job_alert(self, email_body: str) -> List[Dict]:
         """Parse Glassdoor job alert emails."""
         jobs = []
-        
-        # Glassdoor job alert patterns
         job_pattern = re.compile(
             r'(?P<title>[^\n]+?)\s*\n\s*(?P<company>[^\n]+?)\s*\n\s*(?P<location>[^\n]+?)\s*\n.*?'
-            r'(?:https://www\.glassdoor\.com/job-listing/[^\s]+)',
+            r'(https://www\.glassdoor\.com/job-listing/[^\s]+)',
             re.DOTALL | re.IGNORECASE
         )
-        
         matches = job_pattern.finditer(email_body)
-        
         for match in matches:
             title = match.group('title').strip()
             company = match.group('company').strip()
             location = match.group('location').strip()
-            
-            # Find the URL in the match
-            url_match = re.search(r'https://www\.glassdoor\.com/job-listing/[^\s]+', 
-                                email_body[match.start():match.end()])
-            job_url = url_match.group(0) if url_match else ""
-            
-            jobs.append({
+            job_url = match.group(4).strip()
+            apply_url = ''
+            # Look for a direct apply link (if present and different)
+            apply_link_match = re.search(r'(https://www\.glassdoor\.com/partner/jobListing/applyJobListing.htm\?jobListingId=\d+)', email_body)
+            if apply_link_match:
+                apply_url = apply_link_match.group(1).strip()
+                if apply_url == job_url:
+                    apply_url = ''
+            job = {
                 'title': title,
                 'company': company,
                 'location': location,
@@ -387,46 +510,37 @@ class EmailScanner:
                 'job_url': job_url,
                 'full_description': "",
                 'source': 'Glassdoor Email'
-            })
-        
+            }
+            job['apply_url'] = apply_url or job_url
+            jobs.append(job)
         return jobs
     
     def _parse_generic_job_alert(self, email_body: str) -> List[Dict]:
         """Parse generic job alert emails using common patterns."""
         jobs = []
-        
-        # Generic patterns for job information
         lines = email_body.split('\n')
-        
         for i, line in enumerate(lines):
-            # Look for job title patterns
             if any(keyword in line.lower() for keyword in ['engineer', 'manager', 'analyst', 'developer', 'specialist']):
                 title = line.strip()
-                
-                # Look for company in next few lines
                 company = ""
                 location = ""
                 job_url = ""
-                
+                apply_url = ""
                 for j in range(i+1, min(i+5, len(lines))):
                     next_line = lines[j].strip()
-                    
-                    # Company patterns
                     if not company and next_line and not any(char in next_line for char in ['http', '@', 'salary']):
                         company = next_line
-                    
-                    # Location patterns
                     elif not location and any(loc_word in next_line.lower() for loc_word in ['dubai', 'canada', 'remote', 'uae']):
                         location = next_line
-                    
-                    # URL patterns
                     elif 'http' in next_line:
                         url_match = re.search(r'https?://[^\s]+', next_line)
                         if url_match:
-                            job_url = url_match.group(0)
-                
+                            if not job_url:
+                                job_url = url_match.group(0)
+                            else:
+                                apply_url = url_match.group(0)
                 if title and company:
-                    jobs.append({
+                    job = {
                         'title': title,
                         'company': company,
                         'location': location,
@@ -434,8 +548,9 @@ class EmailScanner:
                         'job_url': job_url,
                         'full_description': "",
                         'source': 'Generic Email'
-                    })
-        
+                    }
+                    job['apply_url'] = apply_url or job_url
+                    jobs.append(job)
         return jobs
 
 
@@ -471,31 +586,45 @@ def parse_job_email(email_body: str) -> List[Dict]:
 
 def scan_job_emails(label: str = None, max_emails: int = 50) -> List[Dict]:
     """
-    Scan Gmail for job alert emails and extract job information.
+    Scan job alert emails and extract job information.
     
     Args:
-        label: Gmail label to filter emails (defaults to config value)
+        label: Gmail label to filter emails (default: from config)
         max_emails: Maximum number of emails to process
         
     Returns:
-        List of job dictionaries extracted from emails
+        List of job dictionaries
     """
     scanner = EmailScanner()
     
-    if label is None:
-        label = scanner.config.get('job_alert_label', 'Job Alerts')
+    # If authentication failed, return empty list
+    if not scanner.service:
+        logger.warning("Skipping email scanning due to authentication failure")
+        return []
     
-    # Fetch emails
-    emails = scanner.fetch_labeled_emails(label, max_emails)
-    
-    # Parse jobs from all emails
-    all_jobs = []
-    for email_data in emails:
-        jobs = scanner.parse_job_email(email_data['body'])
-        all_jobs.extend(jobs)
-    
-    logging.getLogger(__name__).info(f"Extracted {len(all_jobs)} jobs from {len(emails)} emails")
-    return all_jobs
+    try:
+        # Use label from config if not specified
+        if not label:
+            label = scanner.config.get('gmail_label', 'Job Alerts')
+        
+        emails = scanner.fetch_labeled_emails(label, max_emails)
+        jobs = []
+        
+        for email in emails:
+            try:
+                email_jobs = scanner.parse_job_email(email['body'])
+                jobs.extend(email_jobs)
+            except Exception as e:
+                logger.error(f"Error parsing email {email.get('id', 'unknown')}: {e}")
+                continue
+        
+        logger.info(f"Found {len(jobs)} jobs in {len(emails)} emails")
+        return jobs
+        
+    except Exception as e:
+        logger.error(f"Error scanning job emails: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
 
 
 if __name__ == "__main__":

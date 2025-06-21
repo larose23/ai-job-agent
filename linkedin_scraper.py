@@ -37,6 +37,7 @@ from helpers import (
     logger,
     notify_slack
 )
+from datetime import datetime
 
 class LinkedInScraper:
     """
@@ -67,6 +68,7 @@ class LinkedInScraper:
         Example:
             scraper = LinkedInScraper("user@example.com", "password")
         """
+        print(f"[DEBUG][LinkedInScraper.__init__] email: {email}, password: {password}")
         self.email = email
         self.password = password
         self.driver = None
@@ -120,13 +122,27 @@ class LinkedInScraper:
         """
         try:
             options = uc.ChromeOptions()
-            options.add_argument('--headless')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
-            
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--start-maximized')
+            user_agents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ]
+            random_user_agent = random.choice(user_agents)
             self.driver = uc.Chrome(options=options)
-            self.wait = WebDriverWait(self.driver, 20)
-            
+            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": random_user_agent
+            })
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            self.driver.execute_script("Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})")
+            self.driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})")
+            self.wait = WebDriverWait(self.driver, 30)
         except Exception as e:
             error_msg = f"Failed to setup Chrome driver: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -143,6 +159,7 @@ class LinkedInScraper:
         2. Enters credentials
         3. Submits the login form
         4. Waits for successful login
+        5. Verifies login success with multiple checks
         
         Raises:
             Exception: If login fails after retries
@@ -151,38 +168,97 @@ class LinkedInScraper:
             scraper.login()
         """
         try:
+            logger.info("Attempting to log in to LinkedIn...")
             self.driver.get("https://www.linkedin.com/login")
-            random_delay()
-            
+            random_delay(3, 5)
+
+            # Get credentials from environment variables
+            email = os.getenv("LINKEDIN_EMAIL")
+            password = os.getenv("LINKEDIN_PASSWORD")
+            print(f"[DEBUG] Using LinkedIn email: {email}")
+
             # Enter email
-            email_field = self.wait.until(
-                EC.presence_of_element_located((By.ID, "username"))
-            )
-            email_field.send_keys(self.email)
-            random_delay()
+            email_field = self.wait.until(EC.presence_of_element_located((By.ID, "username")))
+            email_field.clear()
+            random_delay(1, 2)
+            for char in email:
+                email_field.send_keys(char)
+                time.sleep(random.uniform(0.1, 0.3))
+            logger.debug("Email entered successfully")
+            random_delay(1, 2)
             
             # Enter password
-            password_field = self.driver.find_element(By.ID, "password")
-            password_field.send_keys(self.password)
-            random_delay()
+            password_field = self.wait.until(EC.presence_of_element_located((By.ID, "password")))
+            password_field.clear()
+            random_delay(1, 2)
+            for char in password:
+                password_field.send_keys(char)
+                time.sleep(random.uniform(0.1, 0.3))
+            logger.debug("Password entered successfully")
+            random_delay(1, 2)
             
             # Click login button
-            login_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            login_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
+            random_delay(1, 2)
             login_button.click()
+            logger.debug("Login button clicked")
             
-            # Wait for login to complete
-            self.wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".global-nav"))
-            )
+            # Wait for login success
+            success_selectors = [
+                '.global-nav__me-photo',
+                '.global-nav__me-menu',
+                '.feed-identity-module',
+                '.search-global-typeahead',
+                '.global-nav__primary-items',
+                '.global-nav__secondary-items'
+            ]
             
-            logger.info("Successfully logged in to LinkedIn")
+            login_success = False
+            for selector in success_selectors:
+                try:
+                    self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                    login_success = True
+                    logger.info(f"Login successful! Detected by selector: {selector}")
+                    break
+                except TimeoutException:
+                    logger.debug(f"Selector {selector} not found, trying next...")
+                    continue
+            
+            if not login_success:
+                # Check for 2FA or CAPTCHA
+                current_url = self.driver.current_url
+                if "checkpoint" in current_url or "captcha" in current_url.lower():
+                    logger.warning("⚠️ 2FA or CAPTCHA detected. Please complete manually in the browser.")
+                    input("Press Enter after completing 2FA/CAPTCHA in the browser...")
+                    logger.info("Manual intervention complete. Re-checking login status...")
+                    
+                    # Try all selectors again after manual intervention
+                    for selector in success_selectors:
+                        try:
+                            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                            login_success = True
+                            logger.info(f"Login successful after manual intervention! Detected by selector: {selector}")
+                            break
+                        except TimeoutException:
+                            logger.debug(f"Selector {selector} not found after manual intervention, trying next...")
+                            continue
+                
+                if not login_success:
+                    raise Exception("Login failed - no success indicators found")
+            
+            # Additional verification
+            self.driver.get("https://www.linkedin.com/feed/")
+            random_delay(2, 4)
+            if "feed" not in self.driver.current_url:
+                raise Exception("Failed to access feed after login")
+            logger.info("Successfully accessed feed after login")
             
         except Exception as e:
-            error_msg = f"LinkedIn login failed: {str(e)}"
+            error_msg = f"Login failed: {str(e)}"
             logger.error(error_msg, exc_info=True)
             notify_slack(error_msg)
-            raise
-            
+            raise 
+
     @retry_network
     def search_jobs(
         self,
@@ -192,12 +268,6 @@ class LinkedInScraper:
     ) -> List[Dict[str, Any]]:
         """
         Search for jobs on LinkedIn with retry logic.
-        
-        This method:
-        1. Constructs the search URL
-        2. Navigates to the search results
-        3. Extracts job data from each page
-        4. Handles pagination
         
         Args:
             keywords: Job search keywords (e.g., "python developer")
@@ -216,9 +286,6 @@ class LinkedInScraper:
                 
         Raises:
             Exception: If job search fails after retries
-            
-        Example:
-            jobs = scraper.search_jobs("python developer", "dubai", max_pages=3)
         """
         jobs = []
         page = 1
@@ -279,135 +346,69 @@ class LinkedInScraper:
     def _extract_job_data(self, card: Any) -> Optional[Dict[str, Any]]:
         """
         Extract job data from a job card with error handling.
-        
-        This method:
-        1. Clicks on the job card to load details
-        2. Waits for job details to load
-        3. Extracts job information
-        4. Handles missing or stale elements
-        
-        Args:
-            card: Selenium WebElement representing a job card
-            
-        Returns:
-            Optional[Dict[str, Any]]: Dictionary containing job details:
-                - title: Job title
-                - company: Company name
-                - location: Job location
-                - description: Full job description
-                - apply_link: Direct application link (if available)
-                - source: Source platform (LinkedIn)
-                - scraped_at: Timestamp of scraping
-                None if extraction fails
-                
-        Example:
-            job_data = scraper._extract_job_data(job_card)
         """
         try:
             # Click on job card to load details
             card.click()
             random_delay()
-            
+
             # Wait for job details to load
             job_details = self.wait.until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".job-view-layout"))
             )
-            
-            # Extract job information
-            title = job_details.find_element(
-                By.CSS_SELECTOR,
-                ".job-details-jobs-unified-top-card__job-title"
-            ).text
-            
-            company = job_details.find_element(
-                By.CSS_SELECTOR,
-                ".job-details-jobs-unified-top-card__company-name"
-            ).text
-            
-            location = job_details.find_element(
-                By.CSS_SELECTOR,
-                ".job-details-jobs-unified-top-card__bullet"
-            ).text
-            
-            # Get job description
-            description = job_details.find_element(
-                By.CSS_SELECTOR,
-                ".job-details-jobs-unified-top-card__job-description"
-            ).text
-            
-            # Get application link
+
+            # Robust selectors for job info
+            def try_select(selectors):
+                for sel in selectors:
+                    try:
+                        el = job_details.find_element(By.CSS_SELECTOR, sel)
+                        if el and el.text.strip():
+                            return el.text.strip()
+                    except Exception:
+                        continue
+                return "N/A"
+
+            title = try_select([
+                ".job-details-jobs-unified-top-card__job-title",
+                ".top-card-layout__title",
+                "h2.top-card-layout__title",
+                "h1"
+            ])
+            company = try_select([
+                ".job-details-jobs-unified-top-card__company-name",
+                ".topcard__org-name-link",
+                ".topcard__flavor",
+                ".topcard__org-name"
+            ])
+            location = try_select([
+                ".job-details-jobs-unified-top-card__bullet",
+                ".topcard__flavor--bullet",
+                ".topcard__flavor",
+                ".topcard__location"
+            ])
+            description = try_select([
+                ".job-description",
+                "#job-details",
+                ".description__text",
+                ".jobs-description__container"
+            ])
+
+            # Get apply link if available
             try:
-                apply_button = job_details.find_element(
+                apply_link = job_details.find_element(
                     By.CSS_SELECTOR,
-                    ".jobs-apply-button"
-                )
-                apply_link = apply_button.get_attribute("href")
+                    ".jobs-apply-button, a[data-control-name='jobdetails_topcard_inapply']"
+                ).get_attribute("href")
             except NoSuchElementException:
                 apply_link = None
-                
+
             return {
                 'title': title,
                 'company': company,
                 'location': location,
                 'description': description,
-                'apply_link': apply_link,
-                'source': 'LinkedIn',
-                'scraped_at': time.strftime("%Y-%m-%d %H:%M:%S")
+                'apply_link': apply_link
             }
-            
         except Exception as e:
-            logger.warning(f"Failed to extract job data: {str(e)}")
-            return None
-
-def create_linkedin_scraper() -> LinkedInScraper:
-    """
-    Create a LinkedIn scraper instance with credentials from environment variables.
-    
-    Returns:
-        LinkedInScraper: Configured LinkedIn scraper instance
-        
-    Raises:
-        ValueError: If required environment variables are missing
-        
-    Example:
-        scraper = create_linkedin_scraper()
-    """
-    email = os.getenv("LINKEDIN_EMAIL")
-    password = os.getenv("LINKEDIN_PASSWORD")
-    
-    if not email or not password:
-        error_msg = "Missing LinkedIn credentials in environment variables"
-        logger.error(error_msg)
-        notify_slack(error_msg)
-        raise ValueError(error_msg)
-        
-    return LinkedInScraper(email=email, password=password)
-
-
-if __name__ == "__main__":
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    try:
-        # Test LinkedIn scraping
-        with create_linkedin_scraper() as scraper:
-            # Login
-            scraper.login()
-            
-            # Search for jobs
-            jobs = scraper.search_jobs(
-                keywords="Python Developer",
-                location="Remote",
-                max_pages=2
-            )
-            
-            logger.info(f"Found {len(jobs)} jobs")
-            for job in jobs:
-                logger.info(f"Job: {job['title']} at {job['company']}")
-                
-    except Exception as e:
-        logger.error(f"Test failed: {e}")
-        sys.exit(1) 
+            logger.warning(f"Error extracting job data: {e}")
+            return None 

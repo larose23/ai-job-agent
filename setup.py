@@ -45,17 +45,18 @@ def check_python_version() -> bool:
     Returns:
         bool: True if Python version is compatible, False otherwise
     """
-    version = sys.version_info
-    if version.major < 3 or (version.major == 3 and version.minor < 9):
-        logger.error("Python 3.9 or higher is required")
-        logger.error(f"Current version: {version.major}.{version.minor}.{version.micro}")
+    required_version = (3, 8)
+    current_version = sys.version_info[:2]
+    
+    if current_version < required_version:
+        logger.error(f"Python {required_version[0]}.{required_version[1]} or higher is required")
         return False
     
-    logger.info(f"Python version: {version.major}.{version.minor}.{version.micro}")
+    logger.info(f"Python version {sys.version.split()[0]} is compatible")
     return True
 
 def install_dependencies() -> bool:
-    """Install Python dependencies.
+    """Install required dependencies.
     
     Returns:
         bool: True if installation was successful, False otherwise
@@ -63,9 +64,8 @@ def install_dependencies() -> bool:
     logger.info("Installing Python dependencies...")
     
     try:
-        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], 
-                      check=True, capture_output=True)
-        logger.info("Python dependencies installed")
+        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+        logger.info("Dependencies installed successfully")
         
         # Install Playwright browsers
         logger.info("Installing Playwright browsers...")
@@ -80,114 +80,60 @@ def install_dependencies() -> bool:
         return False
 
 def setup_config() -> bool:
-    """Help user set up configuration.
+    """Set up configuration files.
     
     Returns:
         bool: True if configuration was successful, False otherwise
     """
-    config_path = "config.json"
-    template_path = "config.json.template"
-    
-    if os.path.exists(config_path):
-        response = input(f"Config file already exists. Overwrite? (y/N): ")
-        if response.lower() != 'y':
-            logger.info("Keeping existing config file")
+    try:
+        # Create .env from template if it doesn't exist
+        if not os.path.exists(".env"):
+            if os.path.exists(".env.template"):
+                with open(".env.template", "r") as template:
+                    with open(".env", "w") as env:
+                        env.write(template.read())
+                logger.info("Created .env file from template")
+            else:
+                logger.error(".env.template not found")
+                return False
+                
+        # Create config.json from template if it doesn't exist
+        if not os.path.exists("config.json"):
+            if os.path.exists("config.json.template"):
+                with open("config.json.template", "r") as template:
+                    with open("config.json", "w") as config:
+                        config.write(template.read())
+                logger.info("Created config.json from template")
+            else:
+                logger.error("config.json.template not found")
+                return False
+                
             return True
-    
-    if not os.path.exists(template_path):
-        logger.error(f"Template file {template_path} not found")
+    except Exception as e:
+        logger.error(f"Failed to set up configuration: {e}")
         return False
-    
-    # Copy template to config
-    with open(template_path, 'r') as f:
-        config_data = json.load(f)
-    
-    logger.info("Setting up configuration...")
-    logger.info("You can edit config.json manually later with your actual credentials")
-    
-    # Basic prompts for essential settings
-    openai_key = input("Enter your OpenAI API key (or press Enter to skip): ").strip()
-    if openai_key:
-        config_data["openai_api_key"] = openai_key
-    
-    sheet_id = input("Enter your Google Sheets ID (or press Enter to skip): ").strip()
-    if sheet_id:
-        config_data["spreadsheet_id"] = sheet_id
-    
-    gmail = input("Enter your Gmail address (or press Enter to skip): ").strip()
-    if gmail:
-        config_data["gmail_sender_email"] = gmail
-    
-    # Save config
-    with open(config_path, 'w') as f:
-        json.dump(config_data, f, indent=2)
-    
-    logger.info(f"Configuration saved to {config_path}")
-    logger.info("Remember to edit config.json with your actual credentials!")
-    return True
 
 def setup_resume() -> bool:
-    """Help user set up base resume.
+    """Set up resume file.
     
     Returns:
         bool: True if resume setup was successful, False otherwise
     """
-    resume_path = "data/base_resume.txt"
-    
-    if os.path.exists(resume_path):
-        response = input("Base resume already exists. Overwrite? (y/N): ")
-        if response.lower() != 'y':
-            logger.info("Keeping existing resume file")
-            return True
-    
-    # Create data directory if it doesn't exist
-    os.makedirs("data", exist_ok=True)
-    
-    logger.info("Setting up base resume...")
-    logger.info("You can edit data/base_resume.txt later with your actual resume content")
-    
-    # Create a basic template
-    resume_template = """[Your Name]
-[Your Email] | [Your Phone] | [Your Location] | [LinkedIn Profile]
-
-PROFESSIONAL SUMMARY
-[Brief summary of your experience and skills]
-
-TECHNICAL SKILLS
-• Programming Languages: [List your languages]
-• Frameworks & Tools: [List frameworks and tools]
-• Databases: [List database technologies]
-• Cloud Platforms: [List cloud platforms]
-
-PROFESSIONAL EXPERIENCE
-
-[Job Title] | [Company Name] | [Location] | [Start Date] - [End Date]
-• [Achievement/responsibility with quantifiable results]
-• [Achievement/responsibility with quantifiable results]
-• [Achievement/responsibility with quantifiable results]
-
-[Job Title] | [Company Name] | [Location] | [Start Date] - [End Date]
-• [Achievement/responsibility with quantifiable results]
-• [Achievement/responsibility with quantifiable results]
-
-EDUCATION
-[Degree] in [Field] | [University Name] | [Location] | [Graduation Year]
-
-CERTIFICATIONS
-• [Certification Name] - [Issuing Organization] ([Year])
-
-PROJECTS
-[Project Name] | [Technologies Used] | [Year]
-• [Brief description of project and your role]
-• [Key achievements or outcomes]
-"""
-    
-    with open(resume_path, 'w') as f:
-        f.write(resume_template)
-    
-    logger.info(f"Base resume template created at {resume_path}")
-    logger.info("Please edit this file with your actual resume content!")
+    try:
+        resume_dir = Path("data")
+        resume_dir.mkdir(exist_ok=True)
+        
+        resume_file = resume_dir / "base_resume.txt"
+        if not resume_file.exists():
+            with open(resume_file, "w") as f:
+                f.write("# Your Resume Content\n\n")
+                f.write("Add your resume content here.\n")
+            logger.info("Created base_resume.txt template")
+            
     return True
+    except Exception as e:
+        logger.error(f"Failed to set up resume: {e}")
+        return False
 
 def verify_setup() -> bool:
     """Verify the setup is correct.
@@ -202,8 +148,7 @@ def verify_setup() -> bool:
         "config.json",
         "data/base_resume.txt",
         "requirements.txt",
-        "main.py",
-        "google_credentials.json"  # Required for Google Sheets API authentication
+        "main.py"
     ]
     
     missing_files = []
@@ -213,42 +158,30 @@ def verify_setup() -> bool:
     
     if missing_files:
         logger.error(f"Missing files: {missing_files}")
-        if "google_credentials.json" in missing_files:
-            logger.warning("IMPORTANT: google_credentials.json is required for Google Sheets API authentication.")
-            logger.info("Please obtain this file from the Google Cloud Console:")
-            logger.info("1. Go to https://console.cloud.google.com")
-            logger.info("2. Create a new project or select an existing one")
-            logger.info("3. Enable the Google Sheets API")
-            logger.info("4. Create a service account and download the credentials JSON file")
-            logger.info("5. Rename the downloaded file to 'google_credentials.json' and place it in the project root")
+        return False
+        
+    # Check environment variables
+    required_vars = [
+        "OPENAI_API_KEY",
+        "GMAIL_SENDER_EMAIL",
+        "GMAIL_APP_PASSWORD",
+        "SPREADSHEET_ID",
+        "GOOGLE_CREDENTIALS_JSON_PATH"
+    ]
+    
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    if missing_vars:
+        logger.error(f"Missing environment variables: {missing_vars}")
         return False
     
-    # Check config file
-    try:
-        with open("config.json", 'r') as f:
-            config = json.load(f)
-        
-        required_keys = ["openai_api_key", "spreadsheet_id", "gmail_sender_email"]
-        missing_keys = [key for key in required_keys if not config.get(key) or "your-" in config.get(key, "")]
-        
-        if missing_keys:
-            logger.warning(f"Config needs attention: {missing_keys}")
-            logger.info("Please edit config.json with your actual credentials")
-        else:
-            logger.info("Configuration looks good")
-            
-    except Exception as e:
-        logger.error(f"Config file error: {e}")
-        return False
-    
-    logger.info("Setup verification completed")
+    logger.info("Setup verification passed")
     return True
 
 def show_next_steps() -> None:
     """Show user what to do next."""
     print_header("Next Steps")
     
-    logger.info("1. Edit config.json with your actual credentials:")
+    logger.info("1. Edit .env with your credentials:")
     logger.info("   • OpenAI API key")
     logger.info("   • Google Sheets ID") 
     logger.info("   • Gmail credentials")

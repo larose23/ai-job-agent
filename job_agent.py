@@ -97,6 +97,7 @@ class JobAgent:
                 email=os.getenv("GMAIL_SENDER_EMAIL"),
                 app_password=os.getenv("GMAIL_APP_PASSWORD")
             )
+            print(f"[DEBUG] JobAgent initializing GmailSender with app password: {os.getenv('GMAIL_APP_PASSWORD')}")
             
             # Initialize spreadsheet manager
             self.spreadsheet_manager = SpreadsheetManager(

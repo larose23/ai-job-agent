@@ -16,7 +16,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from helpers import load_config, retry_on_failure, validate_email
+from helpers import load_config, validate_email
 from logger import logger, notify_slack
 
 load_dotenv()
@@ -35,6 +35,7 @@ class EmailSender:
         self.logger = logger
         self.sender_email = os.getenv('GMAIL_SENDER_EMAIL')
         self.app_password = os.getenv('GMAIL_APP_PASSWORD')
+        print(f"[DEBUG] EmailSender using Gmail app password: {self.app_password}")
         
         if not self.sender_email or not self.app_password:
             error_msg = "Gmail credentials not found in environment variables"
@@ -75,7 +76,6 @@ class EmailSender:
             logger.error(f"Failed to authenticate with Gmail API: {e}")
             raise
     
-    @retry_on_failure(max_retries=3)
     def send_cold_email(
         self, 
         to_address: str, 

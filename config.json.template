@@ -13,6 +13,7 @@
   "sheet_name": "Jobs",
   "metrics_sheet_name": "Metrics",
   "job_alert_label": "Job Alerts",
+  "review_sheet_name": "Review",
 
   "job_sources": [
     "linkedin",
@@ -209,6 +210,9 @@
     "resume_file_path": "C:/Users/USER/Desktop/Zak's Resume DXB.docx.pdf",
     "linkedin_profile_url": "https://www.linkedin.com/in/zakariya957/"
   },
+
+  "auto_apply_enabled": true,
+  "review_before_apply": false,
 
   "_version": "1.2.0",
   "_revision_date": "2025-06-01"

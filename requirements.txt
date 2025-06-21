@@ -1,40 +1,46 @@
 # Core dependencies
-typer>=0.9.0
-python-dotenv>=0.19.0
-requests>=2.26.0
-beautifulsoup4>=4.9.3
+typer==0.9.0
+python-dotenv==1.0.0
+requests==2.31.0
+beautifulsoup4==4.12.2
+playwright==1.40.0
+fake_useragent==1.4.0
 
 # OpenAI
-openai>=1.0.0
+openai==1.12.0
 
 # Google APIs
-google-api-python-client>=2.0.0
-google-auth>=2.23.0
-google-auth-oauthlib>=0.4.6
-google-auth-httplib2>=0.1.0
-gspread>=5.12.0
+google-api-python-client==2.108.0
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+gspread==5.12.0
 
 # Email and SMTP
-secure-smtplib>=0.1.1
+secure-smtplib==0.1.1
+email-validator==2.1.0.post1
 
 # Logging and Monitoring
-slack-sdk>=3.26.0  # Optional: For Slack notifications
-python-json-logger>=2.0.7
+slack-sdk==3.26.0  # Optional: For Slack notifications
+python-json-logger==2.0.7
+loguru==0.7.2
 
 # Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
 
 # Development
-black>=23.9.0
-isort>=5.12.0
-flake8>=6.1.0
-mypy>=1.5.0
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
 
 # Utility dependencies
-tenacity>=8.0.1  # For retry logic
-python-dateutil>=2.8.2  # For date handling
-selenium>=4.0.0
-undetected-chromedriver>=3.0.0
-pytz>=2021.3
+tenacity==8.2.3  # For retry logic
+python-dateutil==2.8.2  # For date handling
+selenium==4.15.2
+undetected-chromedriver==3.5.4
+pytz==2023.3.post1
+tqdm==4.66.1
 
