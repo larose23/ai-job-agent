@@ -1,14 +1,21 @@
-# AI Job Agent
+# AI Job Agent & Lead Finder
 
-An AI-powered job search automation tool that helps you find and apply to jobs efficiently.
+An AI-powered automation tool with two main functions:
 
-## Features
-
+## 🤖 Job Application Mode (Original)
 - Automated job searching across multiple platforms
 - AI-powered resume tailoring
 - Automated email outreach
 - Job tracking and metrics
 - Multi-platform support (LinkedIn, Indeed, Bayt, etc.)
+
+## 🎯 Lead Finder Mode (NEW)
+- **AI Automation Agency Lead Generation**
+- Searches for people willing to pay for AI automation services
+- Multi-platform lead discovery (Reddit, Twitter, LinkedIn, Facebook)
+- Filters for low-engagement, recent posts
+- Exports qualified leads to CSV
+- **NO job applications** - only lead discovery
 
 ## Prerequisites
 
@@ -77,8 +84,11 @@ Optional environment variables:
 3. Configure the application:
    - Edit config.json with your preferences
    - Set up your resume in data/base_resume.txt
+   - For lead finder: Configure keywords and platforms in config.json lead_search section
 
 ## Usage
+
+### Job Application Mode (Original)
 
 1. Test the setup:
 ```bash
@@ -94,6 +104,30 @@ python main.py --scrape
 ```bash
 python main.py --send-emails
 ```
+
+### Lead Finder Mode (NEW)
+
+1. Test the lead finder:
+```bash
+python test_lead_finder.py
+```
+
+2. Run lead search:
+```bash
+python run_lead_finder.py
+```
+
+3. Test individual sources:
+```bash
+python run_lead_finder.py test
+```
+
+4. Advanced lead search:
+```bash
+python lead_finder_main.py --keywords "AI automation" "automation help" --max-posts 100
+```
+
+**📋 Lead Finder Output**: Results are saved to `ai_automation_leads.csv` with platform, content, URL, and interaction data.
 
 ## Security Notes
 

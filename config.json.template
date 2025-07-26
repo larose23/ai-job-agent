@@ -214,6 +214,38 @@
   "auto_apply_enabled": true,
   "review_before_apply": false,
 
+  "lead_search": {
+    "enabled": true,
+    "keywords": [
+      "pay for AI automation",
+      "looking for AI automation",
+      "need AI automation help",
+      "hire AI automation",
+      "AI automation services",
+      "automation project",
+      "AI automation budget",
+      "automation freelancer",
+      "AI automation contractor",
+      "automation consultant",
+      "AI automation expert",
+      "automation setup",
+      "AI automation implementation",
+      "automation workflow",
+      "AI automation tools"
+    ],
+    "max_posts_per_source": 50,
+    "max_interactions": 10,
+    "output_file": "ai_automation_leads.csv",
+    "platforms": [
+      "reddit",
+      "twitter", 
+      "linkedin",
+      "facebook"
+    ],
+    "search_frequency_hours": 24,
+    "_note": "Lead search finds people willing to pay for AI automation services"
+  },
+
   "_version": "1.2.0",
   "_revision_date": "2025-06-01"
 }
