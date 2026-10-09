@@ -138,7 +138,7 @@ python main.py --send-emails
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Copyright © 2025 Zakariya Mahadalle. All rights reserved. This code is shared for portfolio viewing only; it may not be copied, modified or used without written permission.
 
 ## Project Structure
 
@@ -188,9 +188,6 @@ Example automation prompt format:
 - [ ] [Criterion 2]
 ```
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
