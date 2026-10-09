@@ -1,6 +1,32 @@
 # AI Job Agent
 
-An AI-powered job search automation tool that helps you find and apply to jobs efficiently.
+**An end-to-end job search assistant that finds postings, tailors a resume and cover letter to each one with GPT-4, and logs everything to a Google Sheets tracker.**
+
+> **Portfolio note:** Designed and built by Zakariya Mahadalle using AI coding tools (Cursor, GPT-4). I defined the workflow, wrote the requirements, integrated the services, and tested it end to end on my own job search.
+
+## The problem
+Applying to jobs well is slow: every posting deserves a tailored resume and cover letter, and tracking dozens of applications by hand falls apart fast.
+
+## What it does
+| Step | How |
+|---|---|
+| Find jobs | Scrapes LinkedIn and Indeed, and reads job-alert emails from Gmail |
+| Filter | Keyword, location and salary filters (CAD / USD / AED), with duplicate removal |
+| Tailor | GPT-4 adapts the base resume and writes a cover letter for each posting |
+| Track | Logs every job and its status to Google Sheets |
+| Notify | Optional Slack alerts and outreach emails |
+
+**Built with:** Python, OpenAI GPT-4, Playwright, BeautifulSoup, Gmail API, Google Sheets API, Slack webhooks
+
+## What I learned
+- Scrapers break constantly: job boards change layouts and block bots, so rate limiting and fallbacks matter more than speed.
+- AI tailoring is only as good as its guardrails. It has to adapt wording without inventing experience.
+- Automation earns trust through tracking. A visible log of every action is what makes it usable.
+
+---
+
+## Technical details
+
 
 ## Features
 
@@ -22,7 +48,7 @@ An AI-powered job search automation tool that helps you find and apply to jobs e
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ai-job-agent.git
+git clone https://github.com/larose23/ai-job-agent.git
 cd ai-job-agent
 ```
 

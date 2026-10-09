@@ -189,7 +189,7 @@
   "notification_preferences": {
     "email": {
       "enabled": true,
-      "recipient_list": ["zakariya957@gmail.com"]
+      "recipient_list": ["you@example.com"]
     },
     "slack": {
       "enabled": false,
@@ -204,11 +204,11 @@
   },
 
   "user_profile": {
-    "full_name": "Zakariya Mahadalle",
-    "email": "zakariya957@gmail.com",
-    "phone": "+971502715768",
-    "resume_file_path": "C:/Users/USER/Desktop/Zak's Resume DXB.docx.pdf",
-    "linkedin_profile_url": "https://www.linkedin.com/in/zakariya957/"
+    "full_name": "Your Name",
+    "email": "you@example.com",
+    "phone": "000-000-0000",
+    "resume_file_path": "data/your_resume.pdf",
+    "linkedin_profile_url": "https://www.linkedin.com/in/your-profile/"
   },
 
   "auto_apply_enabled": true,
